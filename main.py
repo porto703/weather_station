@@ -1,33 +1,53 @@
 import config
 import queue
-import read_sensors
 import time
 import threading
+import publisher_thread as pub
+#try:
+import temperature_thread as tmp
+#    tmp_e = False
+#except Exception as e:
+#    print("Temperature Thread Exception from main: ", e)
+#    tmp_e = True
 
-i2c_lock = threading.Lock()
-temp_queue = queue.Queue()
-hum_queue = queue.Queue()
-press_queue = queue.Queue()
+# Thread Queue and Lock
+q = queue.Queue()
+lock = threading.Lock()
 
-# Should follow the order of thread IDs defined in config.py
-q_tuple = (temp_queue, hum_queue, press_queue)
+# Status
+sys_status = True
 
-temp_thread = read_sensors.MyThread("Temp-Thread", config.TEMP_THREAD_ID, 
-                                    i2c_lock, q_tuple, sleep_time = 2)
-hum_thread = read_sensors.MyThread("Hum-Thread", config.HUM_THREAD_ID, 
-                                    i2c_lock, q_tuple, sleep_time = 2)
-press_thread = read_sensors.MyThread("Press-Thread", config.PRESS_THREAD_ID, 
-                                    i2c_lock, q_tuple, sleep_time = 2)
+# Threads
+temp_thread = tmp.TempThread("Temp-Thread", config.TEMP_THREAD_ID,
+                                    lock, q, 2)
 
 # To Publish every 60 seconds
-publisher_thread = read_sensors.MyThread("Pub-Thread", config.PUBLISHER_THREAD_ID,
-                                    i2c_lock, q_tuple, sleep_time = 6)
+publisher_thread = pub.PubThread("Pub-Thread", config.PUBLISHER_THREAD_ID,
+                                    lock, q, 6)
 
+
+# Start Threads
 temp_thread.start()
-hum_thread.start()
-press_thread.start()
-publisher_thread.start()
+# Run only if there's at least one thread running
+if (temp_thread.is_alive()):
+    publisher_thread.start()
 
-while True:
-    print("Running main loop")
-    time.sleep(3)
+try:
+    while (True == sys_status):   # This variable may depend of a Push Button or an External Signal
+        print("~")
+        time.sleep(3)
+#except KeyboardInterrupt as ki:
+#    print("Keyboard Interrupt. Stopping Threads", ki)
+finally:
+    # Threads should be stopped SAFELY, so .stop() will stop the 
+    # state machine, and .join() will block the main thread 
+    # until called thread is terminated
+    if (temp_thread.is_alive()):
+        temp_thread.stop()
+    if(publisher_thread.is_alive()):
+        publisher_thread.stop()
+
+    temp_thread.join()
+    publisher_thread.join()
+
+    print("System Stopped")
